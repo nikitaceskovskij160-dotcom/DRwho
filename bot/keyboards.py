@@ -1,0 +1,166 @@
+from aiogram.filters.callback_data import CallbackData
+from aiogram.types import InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+from bot import texts
+from bot.db.models import Patient, Reminder
+from bot.services.patients import PatientPage
+from bot.utils import short_name, to_local
+
+
+class PatientsPageCb(CallbackData, prefix="pl"):
+    page: int
+    archived: bool = False
+
+
+class PatientCb(CallbackData, prefix="p"):
+    # open, edit, archive, restore, visits, notes, add_visit, add_note, remind
+    action: str
+    id: int
+
+
+class EditFieldCb(CallbackData, prefix="ef"):
+    patient_id: int
+    field: str
+
+
+class RemindCb(CallbackData, prefix="ri"):
+    patient_id: int  # 0 — напоминание без пациента
+    days: int  # 0 — не напоминать, -1 — своя дата
+
+
+class ReminderCb(CallbackData, prefix="r"):
+    action: str
+    id: int
+
+
+CONSENT_CB = "consent_yes"
+
+
+def _reply(rows: list[list[str]]) -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=t) for t in row] for row in rows], resize_keyboard=True
+    )
+
+
+def main_menu() -> ReplyKeyboardMarkup:
+    return _reply(
+        [
+            [texts.BTN_PATIENTS, texts.BTN_ADD],
+            [texts.BTN_SEARCH, texts.BTN_TODAY],
+            [texts.BTN_REMINDERS, texts.BTN_HELP],
+        ]
+    )
+
+
+def input_kb(skip: bool = False, options: list[list[str]] | None = None) -> ReplyKeyboardMarkup:
+    rows = list(options or [])
+    rows.append([texts.BTN_SKIP, texts.BTN_CANCEL] if skip else [texts.BTN_CANCEL])
+    return _reply(rows)
+
+
+def timezones_kb() -> ReplyKeyboardMarkup:
+    names = list(texts.TIMEZONES)
+    return input_kb(options=[names[i : i + 3] for i in range(0, len(names), 3)])
+
+
+def sex_kb() -> ReplyKeyboardMarkup:
+    return input_kb(skip=True, options=[[texts.BTN_MALE, texts.BTN_FEMALE]])
+
+
+def consent_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=texts.BTN_CONSENT, callback_data=CONSENT_CB)
+    return builder.as_markup()
+
+
+def patient_button_text(patient: Patient) -> str:
+    text = short_name(patient.full_name)
+    if patient.birth_date:
+        text += f", {patient.birth_date.year}"
+    return ("🗄 " if patient.is_archived else "") + text
+
+
+def patients_list(page: PatientPage, archived: bool) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for patient in page.items:
+        builder.button(text=patient_button_text(patient), callback_data=PatientCb(action="open", id=patient.id))
+    builder.adjust(1)
+    nav = InlineKeyboardBuilder()
+    if page.page > 0:
+        nav.button(text="◀️", callback_data=PatientsPageCb(page=page.page - 1, archived=archived))
+    if page.pages > 1:
+        nav.button(text=f"{page.page + 1}/{page.pages}", callback_data=PatientsPageCb(page=page.page, archived=archived))
+    if page.page < page.pages - 1:
+        nav.button(text="▶️", callback_data=PatientsPageCb(page=page.page + 1, archived=archived))
+    builder.attach(nav)
+    toggle = InlineKeyboardBuilder()
+    toggle.button(
+        text="👥 Активные" if archived else "🗄 Архив",
+        callback_data=PatientsPageCb(page=0, archived=not archived),
+    )
+    builder.attach(toggle)
+    return builder.as_markup()
+
+
+def search_results(patients: list[Patient]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for patient in patients:
+        builder.button(text=patient_button_text(patient), callback_data=PatientCb(action="open", id=patient.id))
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def patient_card(patient: Patient) -> InlineKeyboardMarkup:
+    pid = patient.id
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🩺 Приём", callback_data=PatientCb(action="add_visit", id=pid))
+    builder.button(text="📝 Заметка", callback_data=PatientCb(action="add_note", id=pid))
+    builder.button(text="📋 История", callback_data=PatientCb(action="visits", id=pid))
+    builder.button(text="🗒 Заметки", callback_data=PatientCb(action="notes", id=pid))
+    builder.button(text="⏰ Напомнить", callback_data=PatientCb(action="remind", id=pid))
+    builder.button(text="✏️ Изменить", callback_data=PatientCb(action="edit", id=pid))
+    if patient.is_archived:
+        builder.button(text="♻️ Восстановить", callback_data=PatientCb(action="restore", id=pid))
+    else:
+        builder.button(text="🗄 В архив", callback_data=PatientCb(action="archive", id=pid))
+    builder.button(text="◀️ К списку", callback_data=PatientsPageCb(page=0, archived=patient.is_archived))
+    builder.adjust(2, 2, 2, 1, 1)
+    return builder.as_markup()
+
+
+def back_to_card(patient_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="◀️ К карточке", callback_data=PatientCb(action="open", id=patient_id))
+    return builder.as_markup()
+
+
+def edit_fields(patient_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for field, title in texts.FIELD_TITLES.items():
+        builder.button(text=title, callback_data=EditFieldCb(patient_id=patient_id, field=field))
+    builder.button(text="◀️ К карточке", callback_data=PatientCb(action="open", id=patient_id))
+    builder.adjust(2, 2, 1, 1)
+    return builder.as_markup()
+
+
+def remind_options(patient_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for days, label in ((7, "Через 7 дн."), (14, "Через 14 дн."), (30, "Через 30 дн.")):
+        builder.button(text=label, callback_data=RemindCb(patient_id=patient_id, days=days))
+    builder.button(text="📅 Своя дата", callback_data=RemindCb(patient_id=patient_id, days=-1))
+    builder.button(text="Не напоминать", callback_data=RemindCb(patient_id=patient_id, days=0))
+    builder.adjust(3, 2)
+    return builder.as_markup()
+
+
+def reminders_list(reminders: list[Reminder], tz: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for reminder in reminders:
+        label = to_local(reminder.remind_at, tz).strftime("%d.%m %H:%M")
+        if reminder.patient is not None:
+            label += " " + short_name(reminder.patient.full_name)
+        builder.button(text=f"❌ {label}", callback_data=ReminderCb(action="cancel", id=reminder.id))
+    builder.button(text="➕ Новое напоминание", callback_data=RemindCb(patient_id=0, days=-1))
+    builder.adjust(1)
+    return builder.as_markup()
