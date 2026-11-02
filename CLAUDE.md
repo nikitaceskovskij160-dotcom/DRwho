@@ -9,6 +9,7 @@ Telegram-бот — персональный ассистент врача дл�
 - Код MVP (итерации 1–6 из TECH_SPEC §9) написан и залит в GitHub: регистрация по инвайтам,
   пациенты, приёмы, заметки, напоминания, утренняя сводка, тесты, CI, Dockerfile, railway.json.
 - Ждём от пользователя: `BOT_TOKEN`, строку Session pooler Supabase (`DATABASE_URL`), настройку Railway.
+- `.github/workflows/ci.yml` НЕ залит: у GitHub-токена нет scope `workflow`. Код ещё ни разу не запускался.
 - Дальше: итерация 7 (throttling, бэкапы, полировка) и функции этапа 2 из PROJECT_IDEA.
 
 ## Инфраструктура
