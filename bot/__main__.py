@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -7,6 +8,7 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.base import BaseStorage
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
+from pydantic import ValidationError
 
 from bot.config import Settings, get_settings
 from bot.db.session import create_engine, create_session_factory
@@ -43,11 +45,21 @@ def build_storage(settings: Settings) -> BaseStorage:
     )
 
 
+def load_settings() -> Settings:
+    try:
+        return get_settings()
+    except ValidationError as error:
+        names = ", ".join(str(e["loc"][0]).upper() for e in error.errors())
+        raise SystemExit(f"Не заданы или неверны переменные окружения: {names}. Укажите их в Railway → Variables.") from None
+
+
 async def main() -> None:
-    settings = get_settings()
+    settings = load_settings()
     logging.basicConfig(
         level=settings.log_level, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
+    if settings.database_url.startswith("sqlite") and os.environ.get("RAILWAY_ENVIRONMENT"):
+        logger.warning("DATABASE_URL не задан: используется SQLite внутри контейнера, данные пропадут при редеплое")
     init_crypto(settings.encryption_key)
 
     engine = create_engine(settings.database_url)
