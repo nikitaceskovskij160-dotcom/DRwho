@@ -27,7 +27,7 @@
 | Режим бота | **Webhook** в prod, long polling локально | Нет конфликта `getUpdates` при перекрытии старого и нового контейнера во время деплоя |
 | БД | Supabase PostgreSQL через SQLAlchemy + asyncpg | Управляемый Postgres, бэкапы, веб-консоль |
 | FSM | Railway Redis | Состояние диалогов переживает редеплой |
-| Миграции | Alembic, запуск в Railway **Pre-Deploy Command** | Схема обновляется до старта нового кода |
+| Миграции | Alembic, запуск при старте контейнера (CMD в Dockerfile) | Схема обновляется до старта нового кода; реплика одна, гонок нет |
 | CI | GitHub Actions | Railway включает «Wait for CI» — деплой только при зелёных тестах |
 
 ### 1.1 Supabase: как используем
@@ -222,7 +222,7 @@ blind index (HMAC токенов ФИО) в отдельной таблице.
 **Railway**:
 - Источник: GitHub repo `DRwho`, ветка `main`, «Wait for CI» включено.
 - Build: `Dockerfile` (python:3.12-slim, non-root user, `pip install --no-cache-dir -r requirements.txt`).
-- Pre-deploy: `alembic upgrade head`. Start: `python -m bot`. Healthcheck: `/health`.
+- Старт контейнера (CMD в Dockerfile): `alembic upgrade head && python -m bot`. Healthcheck: `/health`.
 - Public networking: сгенерированный домен `*.up.railway.app` для webhook.
 - Replicas: 1. Restart policy: on failure.
 

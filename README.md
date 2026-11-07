@@ -27,7 +27,7 @@ pytest
    - `ENCRYPTION_KEY` — `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
    - `ADMIN_IDS` — ваш Telegram ID (узнать у @userinfobot)
    - `REDIS_URL` — `${{Redis.REDIS_URL}}`
-4. Сборка, миграции (`alembic upgrade head`) и healthcheck настроены в `railway.json`.
+4. Миграции (`alembic upgrade head`) выполняются при старте контейнера. Порт домена в Railway должен быть 8080.
    Webhook включается автоматически по `RAILWAY_PUBLIC_DOMAIN`.
 
 Регистрация врачей — по приглашениям: администратор отправляет боту `/invite` и пересылает ссылку врачу.

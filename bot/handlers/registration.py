@@ -1,3 +1,5 @@
+import logging
+
 from aiogram import F, Router
 from aiogram.filters import CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
@@ -14,6 +16,7 @@ from bot.states import Registration
 from bot.utils import esc, parse_timezone
 from bot.validators import parse_full_name, parse_short_text
 
+logger = logging.getLogger(__name__)
 router = Router(name="registration")
 
 
@@ -36,6 +39,7 @@ async def start(
         return
     if message.from_user is None:
         return
+    logger.info("/start от незарегистрированного telegram_id=%s", message.from_user.id)
     code = (command.args or "").strip()
     if _invite_required(settings, message.from_user.id):
         if not code:

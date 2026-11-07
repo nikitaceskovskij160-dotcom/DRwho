@@ -8,8 +8,8 @@ Telegram-бот — персональный ассистент врача дл�
 ## Текущий статус
 - Код MVP (итерации 1–6 из TECH_SPEC §9) написан и залит в GitHub: регистрация по инвайтам,
   пациенты, приёмы, заметки, напоминания, утренняя сводка, тесты, CI, Dockerfile, railway.json.
-- Ждём от пользователя: `BOT_TOKEN`, строку Session pooler Supabase (`DATABASE_URL`), настройку Railway.
-- `.github/workflows/ci.yml` НЕ залит: у GitHub-токена нет scope `workflow`. Код ещё ни разу не запускался.
+- Бот @Kmissbot задеплоен на Railway (webhook), переменные заданы через API. Redis пока не подключён.
+- `.github/workflows/ci.yml` НЕ залит: у GitHub-токена нет scope `workflow`, тесты ещё не запускались.
 - Дальше: итерация 7 (throttling, бэкапы, полировка) и функции этапа 2 из PROJECT_IDEA.
 
 ## Инфраструктура
@@ -17,7 +17,10 @@ Telegram-бот — персональный ассистент врача дл�
 - Railway: сервис бота (Dockerfile, webhook по `RAILWAY_PUBLIC_DOMAIN`, 1 реплика) + Railway Redis.
 - БД: Supabase Postgres (project ref `ocfqhwgrcttrjynuktff`) через Session pooler :5432.
   Ключи anon/service_role боту НЕ нужны. На всех таблицах RLS без политик (миграция 0001).
-- Миграции: Railway Pre-Deploy `alembic upgrade head`. CI: GitHub Actions (ruff check, pytest).
+- Миграции: `alembic upgrade head` при старте контейнера (CMD в Dockerfile); railway.json Railway не читает
+  (`configFile` пуст). Порт домена в Railway — 8080. CI: GitHub Actions (ruff check, pytest).
+- Railway управляется через GraphQL API (`backboard.railway.com/graphql/v2`, `Authorization: Bearer`,
+  workspace-токен и ID проекта/сервиса/окружения — в `secrets.local.env`). Домен: drwho-production.up.railway.app.
 - На машине разработчика НЕТ git и Python. Заливка в GitHub — `scripts/push.ps1` (GitHub API),
   проверка кода — через CI на GitHub (Actions).
 

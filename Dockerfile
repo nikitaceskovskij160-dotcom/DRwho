@@ -14,4 +14,5 @@ COPY . .
 RUN useradd --create-home app && chown -R app /app
 USER app
 
-CMD ["python", "-m", "bot"]
+# Миграции при старте: Railway не применяет preDeployCommand из railway.json, реплика одна
+CMD ["sh", "-c", "alembic upgrade head && python -m bot"]
