@@ -1,6 +1,19 @@
 from aiogram import Router
 
-from bot.handlers import admin, common, fallback, notes, patients, registration, reminders, visits
+from bot.handlers import (
+    admin,
+    ai,
+    common,
+    documents,
+    exams,
+    fallback,
+    notes,
+    patients,
+    registration,
+    reminders,
+    templates,
+    visits,
+)
 
 
 def setup_routers() -> Router:
@@ -14,6 +27,10 @@ def setup_routers() -> Router:
         visits.router,
         notes.router,
         reminders.router,
+        templates.router,
+        exams.router,
+        documents.router,
+        ai.router,
         fallback.router,
     )
     return root

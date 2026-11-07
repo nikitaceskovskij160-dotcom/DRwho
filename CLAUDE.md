@@ -6,8 +6,9 @@ Telegram-бот — персональный ассистент врача дл�
 Если решение противоречит этим файлам — сначала уточнить у пользователя, затем обновить файлы.
 
 ## Текущий статус
-- Код MVP (итерации 1–6 из TECH_SPEC §9) написан и залит в GitHub: регистрация по инвайтам,
-  пациенты, приёмы, заметки, напоминания, утренняя сводка, тесты, CI, Dockerfile, railway.json.
+- Работает: регистрация по инвайтам, пациенты, приёмы (первичный осмотр, дневник; анамнез, статус),
+  заметки, напоминания, сводка, шаблоны приёмов, обследования, печать .docx, ИИ-помощник.
+- ИИ включается переменной `ANTHROPIC_API_KEY` в Railway; без неё ИИ-кнопки отвечают «не подключён».
 - Бот @Kmissbot задеплоен на Railway (webhook), переменные заданы через API. Redis пока не подключён.
 - `.github/workflows/ci.yml` НЕ залит: у GitHub-токена нет scope `workflow`, тесты ещё не запускались.
 - Дальше: итерация 7 (throttling, бэкапы, полировка) и функции этапа 2 из PROJECT_IDEA.
@@ -21,14 +22,15 @@ Telegram-бот — персональный ассистент врача дл�
   (`configFile` пуст). Порт домена в Railway — 8080. CI: GitHub Actions (ruff check, pytest).
 - Railway управляется через GraphQL API (`backboard.railway.com/graphql/v2`, `Authorization: Bearer`,
   workspace-токен и ID проекта/сервиса/окружения — в `secrets.local.env`). Домен: drwho-production.up.railway.app.
-- На машине разработчика НЕТ git и Python. Заливка в GitHub — `scripts/push.ps1` (GitHub API),
-  проверка кода — через CI на GitHub (Actions).
+- На машине разработчика НЕТ git и Python. Заливка в GitHub — `scripts/push.ps1` (GitHub API).
+  Тесты: портативный Python из NuGet в scratchpad (venv) + `pip install -r requirements-dev.txt`.
 
 ## Стек
 - Python 3.12, **aiogram 3.x** (Router, FSM, middlewares, CallbackData), aiohttp (webhook, /health)
 - SQLAlchemy 2.0 (async) + asyncpg + Alembic; локально и в тестах — SQLite (aiosqlite)
 - Redis — FSM в prod (MemoryStorage без `REDIS_URL`); APScheduler — напоминания и сводки
 - pydantic-settings; `cryptography` (Fernet/MultiFernet) для шифрования полей
+- `anthropic` (Claude API, модель `claude-opus-5-5`), `python-docx` (печатные документы)
 - pytest + pytest-asyncio; ruff
 
 ## Структура
@@ -36,8 +38,10 @@ Telegram-бот — персональный ассистент врача дл�
 bot/
   __main__.py  config.py  web.py        # запуск, настройки, /health + /webhook
   db/          # models.py, session.py, types.py (EncryptedString, EncryptedDate, UTCDateTime)
-  services/    # registration, patients, visits (+заметки), reminders (+сводка), audit
-  handlers/    # common, registration, admin, patients, visits, notes, reminders, views, fallback
+  services/    # registration, patients, visits (+заметки), reminders (+сводка), templates, exams,
+               # documents (.docx), ai (Claude API), audit
+  handlers/    # common, registration, admin, patients, visits, notes, reminders, templates, exams,
+               # documents, ai, views, fallback
   keyboards.py states.py middlewares.py filters.py scheduler.py
   render.py    # форматирование сообщений   validators.py — проверка ввода
   texts.py     # все тексты бота            utils.py — даты, часовые пояса
@@ -50,13 +54,15 @@ scripts/push.ps1
 - `doctors` — врач (telegram_id, ФИО, специализация, timezone, digest_time, consent_at)
 - `invites` — коды приглашения (создаёт админ командой `/invite`)
 - `patients` — пациент врача (ФИО, дата рождения, пол, телефон, примечание, is_archived)
-- `visits` — приём (дата, жалобы, диагноз, назначения, комментарий)
+- `visits` — приём: kind (primary/diary), жалобы, анамнез, статус, диагноз, назначения, комментарий
+- `visit_templates` — шаблоны врача; при выборе заполняют черновик приёма, шаблон не меняется
+- `exam_results` — обследования: текст и/или file_id Telegram, разбор ИИ (analysis)
 - `notes` — заметки к пациенту
 - `reminders` — напоминания (remind_at в UTC, status: pending/sent/cancelled/failed)
 - `audit_log` — журнал действий (только id, без данных)
 
 ## Команды бота
-`/start`, `/menu`, `/patients`, `/add`, `/search`, `/today`, `/reminders`, `/help`, `/cancel`;
+`/start`, `/menu`, `/patients`, `/add`, `/search`, `/today`, `/reminders`, `/templates`, `/ai`, `/help`, `/cancel`;
 админ: `/invite`, `/stats`.
 
 ## Архитектурные правила
@@ -76,7 +82,9 @@ scripts/push.ps1
 - Доступы проекта (GitHub-токен, ключи Supabase) — в `secrets.local.env` (в `.gitignore`).
   Брать оттуда; не копировать в код, документы, коммиты. Репозиторий публичный.
 - В тестах и примерах — только вымышленные данные.
-- Бот НЕ ставит диагнозы и не даёт медицинских рекомендаций.
+- ИИ даёт врачу советы по решению владельца проекта, но только врачу и с пометкой «подсказка ИИ».
+  В ИИ не передавать ФИО, телефон, дату рождения (`build_context`). Файлы уходят как есть.
+- Перед долгим вызовом ИИ делать `session.commit()`, чтобы не держать соединение с БД.
 
 ## Стиль кода
 - PEP 8, type hints, async/await для I/O, строка до 120 символов (ruff).

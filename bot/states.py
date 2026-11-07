@@ -26,10 +26,28 @@ class SearchPatient(StatesGroup):
 
 
 class AddVisit(StatesGroup):
-    complaints = State()
-    diagnosis = State()
-    prescriptions = State()
-    comment = State()
+    step = State()
+    draft = State()
+    field_value = State()
+
+
+class AddTemplate(StatesGroup):
+    title = State()
+    kind = State()
+    step = State()
+
+
+class EditTemplate(StatesGroup):
+    value = State()
+
+
+class AddExam(StatesGroup):
+    title = State()
+    content = State()
+
+
+class AskAi(StatesGroup):
+    question = State()
 
 
 class AddNote(StatesGroup):

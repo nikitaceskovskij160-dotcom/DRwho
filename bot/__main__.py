@@ -16,6 +16,7 @@ from bot.handlers import setup_routers
 from bot.middlewares import AuthMiddleware, DbSessionMiddleware
 from bot.scheduler import create_scheduler
 from bot.security.crypto import init_crypto
+from bot.services.ai import AiClient
 from bot.web import start_web
 
 logger = logging.getLogger("bot")
@@ -27,6 +28,8 @@ COMMANDS = [
     BotCommand(command="search", description="Найти пациента"),
     BotCommand(command="today", description="Напоминания на сегодня"),
     BotCommand(command="reminders", description="Все напоминания"),
+    BotCommand(command="templates", description="Шаблоны приёмов"),
+    BotCommand(command="ai", description="Спросить ИИ"),
     BotCommand(command="help", description="Помощь"),
     BotCommand(command="cancel", description="Отменить действие"),
 ]
@@ -65,7 +68,8 @@ async def main() -> None:
     engine = create_engine(settings.database_url)
     session_factory = create_session_factory(engine)
     bot = Bot(settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-    dp = Dispatcher(storage=build_storage(settings), settings=settings)
+    ai = AiClient(settings.anthropic_api_key, settings.anthropic_model) if settings.anthropic_api_key else None
+    dp = Dispatcher(storage=build_storage(settings), settings=settings, ai=ai)
     dp.update.outer_middleware(DbSessionMiddleware(session_factory))
     dp.update.outer_middleware(AuthMiddleware())
     dp.include_router(setup_routers())

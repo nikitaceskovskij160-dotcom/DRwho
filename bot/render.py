@@ -1,11 +1,13 @@
 """Форматирование сообщений (HTML). Весь пользовательский текст экранируется через esc()."""
 
 from bot import texts
-from bot.db.models import Note, Patient, Reminder, Visit
+from bot.db.models import ExamResult, Note, Patient, Reminder, Visit, VisitTemplate
 from bot.services.patients import PatientPage
-from bot.utils import age, esc, fmt_date, fmt_dt, local_today, short_name, to_local, truncate
+from bot.utils import MAX_MESSAGE_LEN, age, esc, fmt_date, fmt_dt, local_today, short_name, to_local, truncate
 
 SEX_TITLES = {"M": "М", "F": "Ж"}
+MAX_PREVIEW_LEN = 500
+MAX_EXAM_TEXT_LEN = 1800
 
 
 def patients_list(page: PatientPage, archived: bool) -> str:
@@ -44,16 +46,57 @@ def visits_history(patient: Patient, visits: list[Visit], tz: str) -> str:
     if not visits:
         lines.append(texts.NO_VISITS)
     for visit in visits:
-        lines.append(f"\n<b>{fmt_dt(visit.visit_at, tz)}</b>")
-        for title, value in (
-            ("Жалобы", visit.complaints),
-            ("Диагноз", visit.diagnosis),
-            ("Назначения", visit.prescriptions),
-            ("Комментарий", visit.comment),
-        ):
+        kind = texts.VISIT_KIND_TITLES.get(visit.kind, visit.kind)
+        lines.append(f"\n<b>{fmt_dt(visit.visit_at, tz)}, {kind}</b>")
+        for field, title in texts.VISIT_FIELD_TITLES.items():
+            value = getattr(visit, field)
             if value:
                 lines.append(f"<i>{title}:</i> {esc(value)}")
-    return truncate("\n".join(lines))
+    return _fit("\n".join(lines))
+
+
+def _fit(text: str) -> str:
+    """Обрезает HTML-текст по границе строки, чтобы не оставить незакрытый тег."""
+    if len(text) <= MAX_MESSAGE_LEN:
+        return text
+    return text[: text.rfind("\n", 0, MAX_MESSAGE_LEN - 1)] + "\n…"
+
+
+def _field_lines(fields: dict[str, str | None]) -> list[str]:
+    lines = []
+    for field, title in texts.VISIT_FIELD_TITLES.items():
+        value = fields.get(field)
+        shown = esc(truncate(value, MAX_PREVIEW_LEN)) if value else f"<i>{texts.DRAFT_EMPTY}</i>"
+        lines.append(f"<b>{title}:</b> {shown}")
+    return lines
+
+
+def visit_draft(patient: Patient, kind: str, fields: dict[str, str | None]) -> str:
+    title = texts.VISIT_KIND_TITLES.get(kind, kind)
+    header = f"🩺 <b>{title}: {esc(short_name(patient.full_name))}</b>"
+    return "\n".join([header, "", *_field_lines(fields), "", texts.DRAFT_HINT])
+
+
+def template_card(template: VisitTemplate) -> str:
+    fields = {field: getattr(template, field) for field in texts.VISIT_FIELD_TITLES}
+    kind = texts.VISIT_KIND_TITLES.get(template.kind, template.kind)
+    return "\n".join([f"📑 <b>{esc(template.title)}</b>", f"<i>{kind}</i>", "", *_field_lines(fields)])
+
+
+def exams_list(patient: Patient, exams: list[ExamResult]) -> str:
+    title = texts.EXAMS_TITLE.format(name=esc(short_name(patient.full_name)))
+    return title if exams else f"{title}\n\n{texts.NO_EXAMS}"
+
+
+def exam_card(exam: ExamResult, tz: str) -> str:
+    lines = [f"🔬 <b>{esc(exam.title)}</b>", fmt_dt(exam.created_at, tz)]
+    if exam.file_id:
+        lines.append(texts.EXAM_HAS_FILE)
+    if exam.text:
+        lines.append(f"\n{esc(truncate(exam.text, MAX_EXAM_TEXT_LEN))}")
+    if exam.analysis:
+        lines.append(f"\n{texts.AI_ANALYSIS_TITLE}\n{esc(truncate(exam.analysis, MAX_EXAM_TEXT_LEN))}")
+    return "\n".join(lines)
 
 
 def notes_list(patient: Patient, notes: list[Note], tz: str) -> str:
@@ -62,7 +105,7 @@ def notes_list(patient: Patient, notes: list[Note], tz: str) -> str:
         lines.append(texts.NO_NOTES)
     for note in notes:
         lines.append(f"\n<b>{fmt_dt(note.created_at, tz)}</b>\n{esc(note.text)}")
-    return truncate("\n".join(lines))
+    return _fit("\n".join(lines))
 
 
 def _reminder_line(reminder: Reminder, tz: str, time_only: bool = False) -> str:

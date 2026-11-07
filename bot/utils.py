@@ -20,6 +20,18 @@ def truncate(text: str, limit: int = MAX_MESSAGE_LEN) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+def split_text(text: str, limit: int = MAX_MESSAGE_LEN) -> list[str]:
+    """Делит длинный текст на части для Telegram, стараясь резать по переносу строки."""
+    chunks = []
+    while len(text) > limit:
+        cut = text.rfind("\n", 0, limit)
+        cut = cut if cut > 0 else limit
+        chunks.append(text[:cut])
+        text = text[cut:].lstrip("\n")
+    chunks.append(text)
+    return chunks
+
+
 def normalize(text: str) -> str:
     return " ".join(text.lower().replace("ё", "е").split())
 

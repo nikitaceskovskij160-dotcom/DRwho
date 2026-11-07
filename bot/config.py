@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     redis_url: str = ""
     encryption_key: str
 
+    # Пустой ключ — ИИ-функции отключены, остальной бот работает
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-opus-5-5"
+
     admin_ids: str = ""
     registration_mode: Literal["invite", "open"] = "invite"
     log_level: str = "INFO"

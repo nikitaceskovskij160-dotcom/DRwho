@@ -22,6 +22,11 @@ class ReminderStatus(enum.StrEnum):
     FAILED = "failed"
 
 
+class VisitKind(enum.StrEnum):
+    PRIMARY = "primary"
+    DIARY = "diary"
+
+
 class Doctor(Base):
     __tablename__ = "doctors"
 
@@ -85,7 +90,10 @@ class Visit(Base):
         BigInteger, ForeignKey("patients.id", ondelete="CASCADE"), nullable=False
     )
     visit_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default=VisitKind.PRIMARY)
     complaints: Mapped[str | None] = mapped_column(EncryptedString())
+    anamnesis: Mapped[str | None] = mapped_column(EncryptedString())
+    status: Mapped[str | None] = mapped_column(EncryptedString())
     diagnosis: Mapped[str | None] = mapped_column(EncryptedString())
     icd10_code: Mapped[str | None] = mapped_column(String(10))
     prescriptions: Mapped[str | None] = mapped_column(EncryptedString())
@@ -108,6 +116,51 @@ class Note(Base):
         BigInteger, ForeignKey("patients.id", ondelete="CASCADE"), nullable=False
     )
     text: Mapped[str] = mapped_column(EncryptedString(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
+
+
+class VisitTemplate(Base):
+    """Шаблон врача: заготовка приёма, которую правят под конкретного пациента."""
+
+    __tablename__ = "visit_templates"
+    __table_args__ = (Index("ix_visit_templates_doctor_id", "doctor_id"),)
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
+    doctor_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("doctors.id", ondelete="CASCADE"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(EncryptedString(), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default=VisitKind.PRIMARY)
+    complaints: Mapped[str | None] = mapped_column(EncryptedString())
+    anamnesis: Mapped[str | None] = mapped_column(EncryptedString())
+    status: Mapped[str | None] = mapped_column(EncryptedString())
+    diagnosis: Mapped[str | None] = mapped_column(EncryptedString())
+    prescriptions: Mapped[str | None] = mapped_column(EncryptedString())
+    comment: Mapped[str | None] = mapped_column(EncryptedString())
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, default=utcnow, onupdate=utcnow
+    )
+
+
+class ExamResult(Base):
+    """Результат обследования: текст и/или файл в Telegram, плюс разбор ИИ."""
+
+    __tablename__ = "exam_results"
+    __table_args__ = (Index("ix_exam_results_patient_id", "patient_id"),)
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
+    doctor_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("doctors.id", ondelete="CASCADE"), nullable=False
+    )
+    patient_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("patients.id", ondelete="CASCADE"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(EncryptedString(), nullable=False)
+    text: Mapped[str | None] = mapped_column(EncryptedString())
+    file_id: Mapped[str | None] = mapped_column(EncryptedString())
+    file_mime: Mapped[str | None] = mapped_column(String(32))
+    analysis: Mapped[str | None] = mapped_column(EncryptedString())
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
 
 

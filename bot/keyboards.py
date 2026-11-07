@@ -3,9 +3,9 @@ from aiogram.types import InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMar
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot import texts
-from bot.db.models import Patient, Reminder
+from bot.db.models import ExamResult, Patient, Reminder, VisitTemplate
 from bot.services.patients import PatientPage
-from bot.utils import short_name, to_local
+from bot.utils import fmt_date, short_name, to_local
 
 
 class PatientsPageCb(CallbackData, prefix="pl"):
@@ -34,6 +34,37 @@ class ReminderCb(CallbackData, prefix="r"):
     id: int
 
 
+class VisitStartCb(CallbackData, prefix="vs"):
+    patient_id: int
+    kind: str
+    template_id: int = 0  # 0 — пустой приём
+
+
+class DraftCb(CallbackData, prefix="d"):
+    action: str  # edit, save
+    field: str = ""
+
+
+class TemplateCb(CallbackData, prefix="t"):
+    action: str  # list, new, open, edit, delete
+    id: int = 0
+
+
+class TemplateFieldCb(CallbackData, prefix="tf"):
+    id: int
+    field: str
+
+
+class ExamCb(CallbackData, prefix="ex"):
+    action: str  # open, file, analyze
+    id: int
+
+
+class DocCb(CallbackData, prefix="doc"):
+    patient_id: int
+    kind: str  # primary, diary, history
+
+
 CONSENT_CB = "consent_yes"
 
 
@@ -48,7 +79,8 @@ def main_menu() -> ReplyKeyboardMarkup:
         [
             [texts.BTN_PATIENTS, texts.BTN_ADD],
             [texts.BTN_SEARCH, texts.BTN_TODAY],
-            [texts.BTN_REMINDERS, texts.BTN_HELP],
+            [texts.BTN_REMINDERS, texts.BTN_TEMPLATES],
+            [texts.BTN_AI, texts.BTN_HELP],
         ]
     )
 
@@ -118,6 +150,9 @@ def patient_card(patient: Patient) -> InlineKeyboardMarkup:
     builder.button(text="📝 Заметка", callback_data=PatientCb(action="add_note", id=pid))
     builder.button(text="📋 История", callback_data=PatientCb(action="visits", id=pid))
     builder.button(text="🗒 Заметки", callback_data=PatientCb(action="notes", id=pid))
+    builder.button(text="🔬 Обследования", callback_data=PatientCb(action="exams", id=pid))
+    builder.button(text="🖨 Документы", callback_data=PatientCb(action="docs", id=pid))
+    builder.button(text=texts.BTN_AI, callback_data=PatientCb(action="ai", id=pid))
     builder.button(text="⏰ Напомнить", callback_data=PatientCb(action="remind", id=pid))
     builder.button(text="✏️ Изменить", callback_data=PatientCb(action="edit", id=pid))
     if patient.is_archived:
@@ -125,7 +160,90 @@ def patient_card(patient: Patient) -> InlineKeyboardMarkup:
     else:
         builder.button(text="🗄 В архив", callback_data=PatientCb(action="archive", id=pid))
     builder.button(text="◀️ К списку", callback_data=PatientsPageCb(page=0, archived=patient.is_archived))
-    builder.adjust(2, 2, 2, 1, 1)
+    builder.adjust(2, 2, 2, 2, 2, 1)
+    return builder.as_markup()
+
+
+def visit_start(patient_id: int, templates: list[VisitTemplate]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for kind, title in texts.VISIT_KIND_TITLES.items():
+        builder.button(text=f"🩺 {title}", callback_data=VisitStartCb(patient_id=patient_id, kind=kind))
+    for template in templates:
+        callback = VisitStartCb(patient_id=patient_id, kind=template.kind, template_id=template.id)
+        builder.button(text=f"📑 {template.title}", callback_data=callback)
+    builder.button(text="◀️ К карточке", callback_data=PatientCb(action="open", id=patient_id))
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def visit_draft() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for field, title in texts.VISIT_FIELD_TITLES.items():
+        builder.button(text=f"✏️ {title}", callback_data=DraftCb(action="edit", field=field))
+    builder.button(text=texts.BTN_SAVE, callback_data=DraftCb(action="save"))
+    builder.adjust(2, 2, 2, 1)
+    return builder.as_markup()
+
+
+def templates_list(templates: list[VisitTemplate]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for template in templates:
+        builder.button(text=f"📑 {template.title}", callback_data=TemplateCb(action="open", id=template.id))
+    builder.button(text="➕ Новый шаблон", callback_data=TemplateCb(action="new"))
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def template_card(template_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✏️ Изменить", callback_data=TemplateCb(action="edit", id=template_id))
+    builder.button(text="🗑 Удалить", callback_data=TemplateCb(action="delete", id=template_id))
+    builder.button(text="◀️ К шаблонам", callback_data=TemplateCb(action="list"))
+    builder.adjust(2, 1)
+    return builder.as_markup()
+
+
+def template_fields(template_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=texts.TEMPLATE_TITLE_FIELD, callback_data=TemplateFieldCb(id=template_id, field="title"))
+    for field, title in texts.VISIT_FIELD_TITLES.items():
+        builder.button(text=title, callback_data=TemplateFieldCb(id=template_id, field=field))
+    builder.button(text="◀️ К шаблону", callback_data=TemplateCb(action="open", id=template_id))
+    builder.adjust(1, 2, 2, 2, 1)
+    return builder.as_markup()
+
+
+def exams_list(patient_id: int, exams: list[ExamResult]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for exam in exams:
+        label = f"{fmt_date(exam.created_at.date())} {exam.title}"
+        builder.button(text=label, callback_data=ExamCb(action="open", id=exam.id))
+    builder.button(text="➕ Добавить результат", callback_data=PatientCb(action="add_exam", id=patient_id))
+    builder.button(text="◀️ К карточке", callback_data=PatientCb(action="open", id=patient_id))
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def exam_card(exam: ExamResult) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🤖 Разобрать с ИИ", callback_data=ExamCb(action="analyze", id=exam.id))
+    if exam.file_id:
+        builder.button(text="📎 Показать файл", callback_data=ExamCb(action="file", id=exam.id))
+    builder.button(text="◀️ К обследованиям", callback_data=PatientCb(action="exams", id=exam.patient_id))
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def documents(patient_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for kind, title in (
+        ("primary", texts.DOC_PRIMARY),
+        ("diary", texts.DOC_DIARY),
+        ("history", texts.DOC_HISTORY),
+    ):
+        builder.button(text=f"🖨 {title}", callback_data=DocCb(patient_id=patient_id, kind=kind))
+    builder.button(text="◀️ К карточке", callback_data=PatientCb(action="open", id=patient_id))
+    builder.adjust(1)
     return builder.as_markup()
 
 
